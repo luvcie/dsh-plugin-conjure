@@ -1,0 +1,15 @@
+{
+  "name": "dsh-plugin-conjure",
+  "version": "0.0.1",
+  "description": "DeepSeek Harness plugin that renders the model's HTML, with CSS and JavaScript, in the chat.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}
