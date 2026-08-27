@@ -23,6 +23,7 @@ const ConjureAssistantView = memo(function ConjureAssistantView(
 ) {
   const frame = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(DEFAULT_HEIGHT)
+  const [hover, setHover] = useState(false)
 
   const html = node.data.blocks
     .map((b) => (b.kind === 'text' ? b.text : ''))
@@ -34,6 +35,7 @@ const ConjureAssistantView = memo(function ConjureAssistantView(
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
+      if (document.fullscreenElement) return
       if (event.source !== frame.current?.contentWindow) return
       const reported = (event.data as { conjureHeight?: unknown })?.conjureHeight
       if (typeof reported === 'number' && reported > 0) setHeight(reported)
@@ -43,12 +45,57 @@ const ConjureAssistantView = memo(function ConjureAssistantView(
   }, [])
 
   return (
-    <iframe
-      ref={frame}
-      srcDoc={HEAD + html + TAIL}
-      sandbox="allow-scripts"
-      style={{ width: '100%', height, border: 0, display: 'block', colorScheme: 'normal' }}
-    />
+    <div
+      style={{ position: 'relative', width: '100%' }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      <iframe
+        ref={frame}
+        srcDoc={HEAD + html + TAIL}
+        sandbox="allow-scripts"
+        allow="fullscreen"
+        style={{ width: '100%', height, border: 0, display: 'block', colorScheme: 'normal' }}
+      />
+      <button
+        type="button"
+        aria-label="Open full screen"
+        title="Full screen"
+        onClick={() => frame.current?.requestFullscreen?.().catch(() => {})}
+        style={{
+          position: 'absolute',
+          top: 6,
+          right: 6,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 26,
+          height: 26,
+          padding: 0,
+          border: 'none',
+          borderRadius: 6,
+          cursor: 'pointer',
+          color: '#fff',
+          background: 'rgba(0,0,0,.45)',
+          opacity: hover ? 1 : 0,
+          pointerEvents: hover ? 'auto' : 'none',
+          transition: 'opacity .15s',
+        }}
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
+        </svg>
+      </button>
+    </div>
   )
 })
 
