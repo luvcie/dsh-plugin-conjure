@@ -16,7 +16,27 @@ const measure = () => {
 new ResizeObserver(measure).observe(document.documentElement)
 addEventListener('load', measure)
 measure()
+document.addEventListener('submit', (e) => {
+  e.preventDefault()
+  const form = e.target
+  const fields = {}
+  for (const [k, v] of new FormData(form).entries()) fields[k] = String(v)
+  const btn = e.submitter
+  if (btn && btn.name) fields[btn.name] = btn.value
+  parent.postMessage({ conjureSubmit: { id: form.getAttribute('id') || form.getAttribute('name') || '', fields } }, '*')
+}, true)
 </script>`
+
+let harness: Context | null = null
+
+function sendPrompt(text: string): void {
+  const sessions = harness?.sessions
+  const current = sessions?.list.getSnapshot().current
+  if (!sessions || !current) return
+  const scoped = sessions.scope(current)
+  const session = scoped ? sessions.sessionOf(scoped) : undefined
+  void session?.prompt([{ type: 'text', text }], 'queue')
+}
 
 const ConjureAssistantView = memo(function ConjureAssistantView(
   { node }: { node: ChatNode<'assistant-step'> },
@@ -35,10 +55,19 @@ const ConjureAssistantView = memo(function ConjureAssistantView(
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      if (document.fullscreenElement) return
       if (event.source !== frame.current?.contentWindow) return
-      const reported = (event.data as { conjureHeight?: unknown })?.conjureHeight
-      if (typeof reported === 'number' && reported > 0) setHeight(reported)
+      const data = event.data as {
+        conjureHeight?: unknown
+        conjureSubmit?: { id?: string; fields?: Record<string, string> }
+      }
+      if (data.conjureSubmit) {
+        const { id, fields } = data.conjureSubmit
+        const lines = Object.entries(fields ?? {}).map(([k, v]) => `${k}: ${v}`)
+        sendPrompt(`The user submitted a form${id ? ` (${id})` : ''}:\n${lines.join('\n')}\n\nReply with the updated HTML.`)
+        return
+      }
+      if (document.fullscreenElement) return
+      if (typeof data.conjureHeight === 'number' && data.conjureHeight > 0) setHeight(data.conjureHeight)
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -53,7 +82,7 @@ const ConjureAssistantView = memo(function ConjureAssistantView(
       <iframe
         ref={frame}
         srcDoc={HEAD + html + TAIL}
-        sandbox="allow-scripts"
+        sandbox="allow-scripts allow-forms"
         allow="fullscreen"
         style={{ width: '100%', height, border: 0, display: 'block', colorScheme: 'normal' }}
       />
@@ -99,9 +128,10 @@ const ConjureAssistantView = memo(function ConjureAssistantView(
   )
 })
 
-export const inject = ['slots']
+export const inject = ['slots', 'sessions']
 
 export function apply(ctx: Context): void {
+  harness = ctx
   ctx.slots.inject('conversation.chat.node', () =>
     ctx.slots.register(
       { name: 'conversation.chat.node', key: 'assistant-step', priority: -1 },
