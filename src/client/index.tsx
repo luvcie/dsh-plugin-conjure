@@ -70,6 +70,7 @@ const ConjureAssistantView = memo(function ConjureAssistantView(
     .replace(/^\s*```[a-z]*\s*/i, '')
     .replace(/^[^<]*(?=<(!--|!doctype|[a-z]))/i, '')
   const running = node.data.status === 'running'
+  const pending = running && !content.startsWith('<')
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -123,6 +124,34 @@ const ConjureAssistantView = memo(function ConjureAssistantView(
         onLoad={() => setReady(true)}
         style={{ width: '100%', height, border: 0, display: 'block', colorScheme: 'normal' }}
       />
+      {pending && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'currentColor',
+            opacity: 0.5,
+            pointerEvents: 'none',
+          }}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" />
+            <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+              <animateTransform
+                attributeName="transform"
+                type="rotate"
+                from="0 12 12"
+                to="360 12 12"
+                dur="0.8s"
+                repeatCount="indefinite"
+              />
+            </path>
+          </svg>
+        </div>
+      )}
       <button
         type="button"
         aria-label="Open full screen"
