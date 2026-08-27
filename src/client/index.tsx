@@ -3,7 +3,89 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-runtime/client'
 import type { ChatNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
+// dsh-client-ui-settings declares this slot. Mirror the one entry conjure
+// registers into, to avoid a dependency on that package for a single type.
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    'settings.plugins.tab': { kind: 'list'; scope: 'root'; owner: { children?: never } }
+  }
+}
+
 const DEFAULT_HEIGHT = 400
+const PARTIAL_UPDATE_KEY = 'conjure.partialUpdate'
+
+function partialUpdateEnabled(): boolean {
+  try {
+    return localStorage.getItem(PARTIAL_UPDATE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function setPartialUpdate(on: boolean): void {
+  try {
+    localStorage.setItem(PARTIAL_UPDATE_KEY, on ? '1' : '0')
+  } catch {}
+}
+
+const SETTINGS_STYLE_ID = 'conjure-settings-style'
+const SETTINGS_STYLE = `
+.conjure-settings { display: flex; flex-direction: column; gap: 16px; padding: 16px; }
+.conjure-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px;
+  color: var(--dsw-alias-label-primary, inherit);
+  background: var(--dsw-alias-bg-surface, transparent);
+  border: 1px solid var(--dsw-alias-border-subtle, rgba(127, 127, 127, 0.24));
+  border-radius: 12px;
+}
+.conjure-setting-copy { min-width: 0; }
+.conjure-setting-title { font-weight: 500; }
+.conjure-setting-description {
+  margin-top: 4px;
+  color: var(--dsw-alias-label-tertiary, currentColor);
+  font-size: 13px;
+}
+.conjure-switch { display: inline-flex; align-items: center; gap: 8px; flex: none; cursor: pointer; }
+.conjure-switch input {
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  appearance: none;
+  cursor: pointer;
+  border-radius: 999px;
+  background: var(--dsw-alias-fill-tertiary, #555);
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-border-subtle, transparent);
+  transition: background 120ms ease;
+}
+.conjure-switch input::after {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 2px;
+  content: '';
+  border-radius: 50%;
+  background: var(--dsw-alias-label-primary, #fff);
+  transition: transform 120ms ease;
+}
+.conjure-switch input:checked { background: var(--dsw-static-deepseek-500, #4d7cff); }
+.conjure-switch input:checked::after { transform: translateX(14px); }
+.conjure-switch input:focus-visible {
+  outline: 2px solid var(--dsw-static-deepseek-500, #4d7cff);
+  outline-offset: 2px;
+}
+`
+
+function ensureSettingsStyle(): void {
+  if (document.getElementById(SETTINGS_STYLE_ID)) return
+  const style = document.createElement('style')
+  style.id = SETTINGS_STYLE_ID
+  style.textContent = SETTINGS_STYLE
+  document.head.append(style)
+}
 
 const BOOTSTRAP = `<!doctype html><html><head></head><body><script>
 var opened = false
@@ -194,6 +276,37 @@ const ConjureAssistantView = memo(function ConjureAssistantView(
   )
 })
 
+function ConjureSettingsTab() {
+  const [partial, setPartial] = useState(partialUpdateEnabled)
+  return (
+    <div className="conjure-settings">
+      <div className="conjure-setting-row">
+        <div className="conjure-setting-copy">
+          <div className="conjure-setting-title">Partial update</div>
+          <div className="conjure-setting-description">
+            Let the model patch part of the previous render instead of resending the whole page.
+            This browser only.
+          </div>
+        </div>
+        <label className="conjure-switch">
+          <span>{partial ? 'On' : 'Off'}</span>
+          <input
+            type="checkbox"
+            role="switch"
+            aria-label="Partial update mode"
+            checked={partial}
+            onChange={(event) => {
+              const on = event.currentTarget.checked
+              setPartialUpdate(on)
+              setPartial(on)
+            }}
+          />
+        </label>
+      </div>
+    </div>
+  )
+}
+
 export const inject = ['slots', 'sessions']
 
 export function apply(ctx: Context): void {
@@ -202,6 +315,13 @@ export function apply(ctx: Context): void {
     ctx.slots.register(
       { name: 'conversation.chat.node', key: 'assistant-step', priority: -1 },
       ConjureAssistantView,
+    ),
+  )
+  ensureSettingsStyle()
+  ctx.slots.inject('settings.plugins.tab', () =>
+    ctx.slots.register(
+      { name: 'settings.plugins.tab', id: 'conjure', order: 100, label: 'Conjure' },
+      ConjureSettingsTab,
     ),
   )
 }
