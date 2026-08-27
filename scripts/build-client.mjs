@@ -1,6 +1,6 @@
 // dsh-web loads client bundles as window.__ModuleLoader__.load({ id, factory }),
-// not as ES modules. Wrap the tsdown CJS output in that call; id must be the
-// package name.
+// not as ES modules. This puts the tsdown CJS output inside that call; id must
+// equal the package name.
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
