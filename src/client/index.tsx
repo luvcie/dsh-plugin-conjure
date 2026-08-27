@@ -5,27 +5,43 @@ import type { ChatNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 const DEFAULT_HEIGHT = 400
 
-const HEAD = '<style>html,body{margin:0;padding:0;background:transparent;height:100%}</style>'
-
-const TAIL = `<script>
-const measure = () => {
-  let h = 0
-  for (const el of document.body.children) h = Math.max(h, el.getBoundingClientRect().bottom)
+const BOOTSTRAP = `<!doctype html><html><head></head><body><script>
+var opened = false
+function measure() {
+  if (!document.body) return
+  var h = 0, c = document.body.children
+  for (var i = 0; i < c.length; i++) h = Math.max(h, c[i].getBoundingClientRect().bottom)
   parent.postMessage({ conjureHeight: Math.ceil(h) }, '*')
 }
-new ResizeObserver(measure).observe(document.documentElement)
-addEventListener('load', measure)
-measure()
-document.addEventListener('submit', (e) => {
+function onSubmit(e) {
   e.preventDefault()
-  const form = e.target
-  const fields = {}
-  for (const [k, v] of new FormData(form).entries()) fields[k] = String(v)
-  const btn = e.submitter
+  var form = e.target, fields = {}
+  new FormData(form).forEach(function (v, k) { fields[k] = String(v) })
+  var btn = e.submitter
   if (btn && btn.name) fields[btn.name] = btn.value
-  parent.postMessage({ conjureSubmit: { id: form.getAttribute('id') || form.getAttribute('name') || '', fields } }, '*')
-}, true)
-</script>`
+  parent.postMessage({ conjureSubmit: { id: form.getAttribute('id') || form.getAttribute('name') || '', fields: fields } }, '*')
+}
+function onMessage(e) {
+  var d = e.data
+  if (d && typeof d.conjureWrite === 'string') { ensureOpen(); document.write(d.conjureWrite); measure() }
+  else if (d && d.conjureEnd) { ensureOpen(); document.close(); measure() }
+}
+function listen() {
+  addEventListener('message', onMessage)
+  addEventListener('submit', onSubmit, true)
+}
+function ensureOpen() {
+  if (opened) return
+  opened = true
+  // document.open() removes every window event listener; re-register after it.
+  document.open()
+  document.write('<style>html,body{margin:0;padding:0;background:transparent;height:100%}</style>')
+  listen()
+  new ResizeObserver(measure).observe(document.documentElement)
+}
+listen()
+parent.postMessage({ conjureReady: true }, '*')
+</script></body></html>`
 
 let harness: Context | null = null
 
@@ -42,36 +58,56 @@ const ConjureAssistantView = memo(function ConjureAssistantView(
   { node }: { node: ChatNode<'assistant-step'> },
 ) {
   const frame = useRef<HTMLIFrameElement>(null)
+  const sent = useRef(0)
+  const ended = useRef(false)
+  const [ready, setReady] = useState(false)
   const [height, setHeight] = useState(DEFAULT_HEIGHT)
   const [hover, setHover] = useState(false)
 
-  const html = node.data.blocks
+  const content = node.data.blocks
     .map((b) => (b.kind === 'text' ? b.text : ''))
     .join('')
     .replace(/^\s*```[a-z]*\s*/i, '')
-    .replace(/\s*```\s*$/i, '')
     .replace(/^[^<]*(?=<(!--|!doctype|[a-z]))/i, '')
-    .trim()
+  const running = node.data.status === 'running'
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.source !== frame.current?.contentWindow) return
-      const data = event.data as {
+      const d = event.data as {
+        conjureReady?: boolean
         conjureHeight?: unknown
         conjureSubmit?: { id?: string; fields?: Record<string, string> }
       }
-      if (data.conjureSubmit) {
-        const { id, fields } = data.conjureSubmit
+      if (d.conjureReady) {
+        setReady(true)
+        return
+      }
+      if (d.conjureSubmit) {
+        const { id, fields } = d.conjureSubmit
         const lines = Object.entries(fields ?? {}).map(([k, v]) => `${k}: ${v}`)
         sendPrompt(`The user submitted a form${id ? ` (${id})` : ''}:\n${lines.join('\n')}\n\nReply with the updated HTML.`)
         return
       }
       if (document.fullscreenElement) return
-      if (typeof data.conjureHeight === 'number' && data.conjureHeight > 0) setHeight(data.conjureHeight)
+      if (typeof d.conjureHeight === 'number' && d.conjureHeight > 0) setHeight(d.conjureHeight)
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
   }, [])
+
+  useEffect(() => {
+    const win = frame.current?.contentWindow
+    if (!win || !ready || !content.startsWith('<')) return
+    if (content.length > sent.current) {
+      win.postMessage({ conjureWrite: content.slice(sent.current) }, '*')
+      sent.current = content.length
+    }
+    if (!running && !ended.current) {
+      ended.current = true
+      win.postMessage({ conjureEnd: true }, '*')
+    }
+  }, [content, running, ready])
 
   return (
     <div
@@ -81,9 +117,10 @@ const ConjureAssistantView = memo(function ConjureAssistantView(
     >
       <iframe
         ref={frame}
-        srcDoc={HEAD + html + TAIL}
+        srcDoc={BOOTSTRAP}
         sandbox="allow-scripts allow-forms"
         allow="fullscreen"
+        onLoad={() => setReady(true)}
         style={{ width: '100%', height, border: 0, display: 'block', colorScheme: 'normal' }}
       />
       <button
